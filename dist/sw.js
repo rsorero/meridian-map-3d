@@ -1,6 +1,6 @@
 // Service worker: lets the installed app open offline.
 // build.js fills in the cache name below with a hash of the build, so every deploy gets a fresh cache.
-const CACHE = 'acu-e51d99233f';
+const CACHE = 'acu-5c7f60d4d7';
 const FONTS = 'acu-fonts';
 const CORE = ['./', 'index.html', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png'];
 
