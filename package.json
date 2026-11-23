@@ -4,7 +4,8 @@
   "description": "Interactive 3D acupuncture point atlas",
   "main": "index.js",
   "scripts": {
-    "build": "node build.js"
+    "build": "node build.js",
+    "check": "node check.js"
   },
   "keywords": [],
   "author": "",
