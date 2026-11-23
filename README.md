@@ -13,7 +13,9 @@ An interactive 3D acupuncture atlas (the app is titled "Meridian Map 3D") that r
 
 ## Use
 
-Open `dist/index.html` in a modern browser. It is a single self-contained file (three.js is bundled in); it needs internet only for the Google Fonts.
+**Live app:** https://rsorero.github.io/meridian-map-3d/ (deployed automatically from `main` by GitHub Actions)
+
+Or open `dist/index.html` in a modern browser. It is a single self-contained file (three.js is bundled in); it needs internet only for the Google Fonts.
 
 Links can open a point or channel directly, e.g. `index.html#ST36` or `index.html#LR`.
 
