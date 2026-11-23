@@ -1,6 +1,6 @@
 # Meridian Map 3D
 
-An interactive 3D acupuncture atlas (the app is titled "Acupuncture Atlas") that runs in the browser, on desktop and mobile.
+An interactive 3D acupuncture atlas that runs in the browser, on desktop and mobile.
 
 - 361 classical points on the 14 channels, plus the 48 WHO extra points and Anmian, on male and female bodies
 - Channel pathways, Qi circulation animation, extraordinary vessels, Five Phases and the Chinese clock

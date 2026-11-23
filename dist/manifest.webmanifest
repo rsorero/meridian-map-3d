@@ -1,6 +1,6 @@
 {
-  "name": "Acupuncture Atlas 3D",
-  "short_name": "Acu Atlas",
+  "name": "Meridian Map 3D",
+  "short_name": "Meridian Map",
   "description": "Interactive 3D acupuncture atlas: points, channels and treatment protocols",
   "id": "./",
   "start_url": "./",
