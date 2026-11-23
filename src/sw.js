@@ -32,9 +32,10 @@ self.addEventListener('fetch', (e) => {
   }
   if (url.origin !== self.location.origin) return;
 
-  // Same-origin files: network first so updates arrive at once; fall back to the cache offline
+  // Same-origin files: network first so updates arrive at once; fall back to the cache offline.
+  // 'no-cache' makes the browser check with the server instead of reusing its own copy (GitHub Pages allows 10 minutes).
   e.respondWith(
-    fetch(req)
+    fetch(req, { cache: 'no-cache' })
       .then((res) => {
         if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req.mode === 'navigate' ? 'index.html' : req, copy)); }
         return res;
