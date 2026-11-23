@@ -1506,6 +1506,7 @@ function initToolbar() {
 function routeHash() {
   const id = decodeURIComponent(location.hash.slice(1));
   if (!id) return;
+  if (id.startsWith('tab/')) { const t = $(`.tab[data-tab="${id.slice(4)}"]`); if (t) t.click(); history.replaceState(null, '', location.pathname + location.search); return; }
   if (id.startsWith('rx/')) { const [, rid, si] = id.split('/'); if (!state.protocol || state.protocol.id !== rid || Math.max(0, state.protocol.si) !== (+si || 0)) showProtocol(rid, +si || 0); return; }
   if (BY[id]) { if (state.selected !== BY[id]) selectPoint(BY[id]); }
   else if (MER[id]) { if (state.focusMer !== id) selectMeridian(id); }
@@ -1813,6 +1814,18 @@ async function boot() {
   $('#loading').classList.add('done');
   loop();
   routeHash();
+  initInstall();
   window.__acu = { side: () => { sideViewNeedle(); return camAnim && camAnim.tp; }, ni: () => needleInfo, ng: () => !!needleGroup, pick: (x, y) => { const i = pick({ clientX: x, clientY: y, pointerType: 'touch' }); return i && i.pt.code; }, dbg: () => ({ rb: rulerBox && [rulerBox.min, rulerBox.max], lm: lmShow.map(l => l.p), cam: camera.position, tgt: controls.target }), M: () => M, PTS, BY, MER, state, view, selectPoint, selectMeridian, camera, controls, startFlow, stopFlow, startQuiz, setHighlight, showProtocol, RX, RX_BY_PT, CATEGORIES, renderer, needs: () => { needBody = true; needRender = true; } };
+}
+// ------------------------------------------------------------------ installable web app
+function initInstall() {
+  const secure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if ('serviceWorker' in navigator && secure) navigator.serviceWorker.register('sw.js').catch((e) => console.warn('service worker:', e.message));
+  const btn = $('#installapp');
+  let deferred = null;
+  const standalone = () => mq('(display-mode: standalone)') || navigator.standalone === true;
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferred = e; if (!standalone()) btn.hidden = false; });
+  window.addEventListener('appinstalled', () => { deferred = null; btn.hidden = true; });
+  btn.onclick = async () => { if (!deferred) return; deferred.prompt(); try { await deferred.userChoice; } catch {} deferred = null; btn.hidden = true; };
 }
 boot().catch((e) => { $('#loadmsg').textContent = 'Something went wrong: ' + e.message; console.error(e); });

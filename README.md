@@ -16,16 +16,18 @@ An interactive 3D acupuncture atlas (the app is titled "Meridian Map 3D") that r
 
 **Live app:** https://rsorero.github.io/meridian-map-3d/ (deployed automatically from `main` by GitHub Actions)
 
+**Install it as an app:** on Android or desktop Chrome/Edge, open the live app and choose *Install app* from the browser menu (or the *Install app* button in the **?** help card). On iPhone/iPad, use Safari's *Share → Add to Home Screen*. The installed app opens full screen and works offline after the first visit.
+
 Or open `dist/index.html` in a modern browser. It is a single self-contained file (three.js is bundled in); it needs internet only for the Google Fonts.
 
-Links can open a point, channel or protocol directly, e.g. `index.html#ST36`, `index.html#LR` or `index.html#rx/four-gates`.
+Links can open a point, channel, protocol or sidebar tab directly, e.g. `index.html#ST36`, `index.html#LR`, `index.html#rx/four-gates` or `index.html#tab/protocols`.
 
 ## Develop
 
 ```bash
 npm install
 node check.js        # validates the protocols against the point data (--conditions lists every condition)
-node build.js        # bundles src/ into dist/index.html
+node build.js        # bundles src/ into dist/index.html, plus the manifest, icons and service worker
 ```
 
 | File | Contents |
@@ -39,7 +41,9 @@ node build.js        # bundles src/ into dist/index.html
 | `src/guide.js`, `src/find.js` | "How to find it" steps, rulers and landmarks |
 | `src/depth.js` | Needling angle and depth for every point |
 | `src/index.html` | Page shell and styles |
-| `build.js` | esbuild bundling into one HTML file |
+| `src/manifest.webmanifest`, `src/sw.js`, `src/icons/` | Installable web app: manifest, offline service worker, app icons |
+| `scripts/icons.js` | Renders the PNG icons from the SVGs in `src/icons/` (needs Playwright) |
+| `build.js` | esbuild bundling into one HTML file; copies the web app files |
 | `check.js` | Validates protocol point codes, methods, tags and references |
 
 ### Adding or editing protocols
