@@ -1,0 +1,23 @@
+{
+  "name": "Meridian Map 3D",
+  "short_name": "Meridian Map",
+  "description": "Interactive 3D acupuncture atlas: points, channels and treatment protocols",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0d0f13",
+  "theme_color": "#0d0f13",
+  "categories": ["education", "medical", "health"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Protocols", "short_name": "Protocols", "description": "Browse treatment protocols", "url": "./#tab/protocols", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Channels", "short_name": "Channels", "url": "./#tab/channels", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
