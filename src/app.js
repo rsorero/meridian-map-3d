@@ -9,6 +9,7 @@ import { HT, SI, BL, KI } from './data2.js';
 import { PC, SJ, GB, LR } from './data3.js';
 import { CV, GV, EX } from './data4.js';
 import { MERIDIANS, FLOW, STROKES, CATEGORIES, CAT_ORDER, VESSELS, CROSSINGS, FIVE_SHU, SHU_KEYS, FIVE_SHU_NAMES, shuElement, ELEMENTS, EL_INFO, mother, son } from './meta.js';
+import { PROTOCOLS, TRADITIONS, SCHOOLS, METHODS, REFS, GROUPS } from './protocols.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -93,7 +94,27 @@ function buildData() {
   for (const k of CAT_ORDER) for (const c of CATEGORIES[k].pts) if (BY[c]) BY[c].cats.push(k);
   computeInst();
   for (const vs of VESSELS) for (const c of vs.pts) if (BY[c]) (BY[c].vessels = BY[c].vessels || []).push(vs.id);
+  buildProtocols();
 }
+
+// ------------------------------------------------------------------ protocol index
+const RX = {};        // id -> protocol
+const RX_BY_PT = {};  // point code -> [{ p, si, method, role, add }]
+function buildProtocols() {
+  for (const p of PROTOCOLS) {
+    const clean = (list, where) => (list || []).filter((e) => { if (BY[e[0]]) return true; console.warn(`protocol ${p.id}: unknown point ${e[0]} (${where})`); return false; });
+    if (p.sets) p.sets.forEach((st) => (st.pts = clean(st.pts, st.name))); else p.pts = clean(p.pts, 'pts');
+    p.add = clean(p.add, 'add');
+    p.text = [p.name, p.zh, p.pattern, ...p.conditions, p.signs, p.desc, p.principle, SCHOOLS[p.school], TRADITIONS[p.tradition].name].filter(Boolean).join(' · ').toLowerCase();
+    RX[p.id] = p;
+    const seen = new Set();
+    const reg = (e, si, add) => { if (seen.has(e[0])) return; seen.add(e[0]); (RX_BY_PT[e[0]] = RX_BY_PT[e[0]] || []).push({ p, si, method: e[1], role: e[2] || '', add }); };
+    if (p.sets) p.sets.forEach((st, si) => st.pts.forEach((e) => reg(e, si, false))); else p.pts.forEach((e) => reg(e, -1, false));
+    p.add.forEach((e) => reg(e, -1, true));
+  }
+  for (const c in RX_BY_PT) RX_BY_PT[c].sort((a, b) => (a.p.tradition === b.p.tradition ? 0 : a.p.tradition === 'tcm' ? -1 : 1) || a.add - b.add);
+}
+const rxMain = (p, si) => (p.sets ? p.sets[Math.max(0, si)].pts : p.pts);
 
 // ------------------------------------------------------------------ three.js scene
 let renderer, scene, camera, controls, body, bodyScene, rt, composite, pointsMesh, instList = [], lineGroups = {}, vesselGroups = {}, flowOrb;
@@ -104,7 +125,7 @@ let needBody = true, needRender = true, interacting = false, idleTimer = 0, rtSc
 const state = {
   visible: new Set(store.get('visible', ALLM.map((m) => m.id))),
   focusMer: null, selected: null, hover: null, highlight: null, highlightLabel: '', mode: store.get('mode2', 1), sex: store.get('sex', 'male'), landmarks: store.get('landmarks', false),
-  lines: store.get('lines', true), labels: store.get('labels', true), size: store.get('size', 1), vessel: null, flow: false, quiz: null,
+  lines: store.get('lines', true), labels: store.get('labels', true), size: store.get('size', 1), vessel: null, flow: false, quiz: null, protocol: null,
 };
 
 function initScene() {
@@ -425,6 +446,20 @@ function frameMeridian(id) {
   if (id === 'EX') return view('front');
   const ps = [], ns = new THREE.Vector3();
   for (const pt of m.points) for (const ins of pt.inst) if (ins.side > 0) { ps.push(ins.p); ns.add(ins.n); }
+  framePositions(ps, ns);
+}
+function frameCodes(codes) {
+  const pts = codes.map((c) => BY[c]).filter(Boolean);
+  if (pts.length === 1) return flyToPoint(pts[0]);
+  const ps = [], ns = new THREE.Vector3();
+  for (const pt of pts) for (const ins of pt.inst) { ps.push(ins.p); ns.add(ins.n); }
+  if (!ps.length) return;
+  // points facing different ways (front and back, both sides) cancel out: fall back to a front/back view
+  ns.divideScalar(ps.length).setY(0);
+  if (ns.length() < 0.3) ns.set(0, 0, ns.z < -0.05 ? -1 : 1);
+  framePositions(ps, ns);
+}
+function framePositions(ps, ns) {
   const box = new THREE.Box3().setFromPoints(ps);
   const c = box.getCenter(new THREE.Vector3());
   const r = box.getSize(new THREE.Vector3()).length() / 2;
@@ -637,7 +672,7 @@ function setHighlight(set, label, info = '') {
   updatePoints(); updateLines(); needRender = true;
 }
 function clearHighlight(silent) {
-  state.highlight = null; state.vessel = null;
+  state.highlight = null; state.vessel = null; state.protocol = null;
   $('#hlbar').classList.remove('on');
   $$('.cat.on, .vs.on, .elnode.on').forEach((e) => e.classList.remove('on'));
   if (!silent) { updatePoints(); updateLines(); }
@@ -693,6 +728,84 @@ function showCategory(k) {
   openDetail(`<div class="dh"><div class="kicker">${esc(c.group)}</div><h2>${esc(c.name)}</h2></div><p>${esc(c.desc)}</p><table class="ptable">${rows}</table>`);
   $$('#detail tr[data-code]').forEach((tr) => (tr.onclick = () => selectPoint(BY[tr.dataset.code], { keepHighlight: true })));
 }
+
+// ------------------------------------------------------------------ protocols
+const tagHTML = (p) => `<span class="tag ${p.tradition}" title="${esc(TRADITIONS[p.tradition].long)}">${TRADITIONS[p.tradition].name}</span>${p.school ? `<span class="school">${esc(SCHOOLS[p.school])}</span>` : ''}`;
+const methHTML = (m) => [...m].map((c) => `<span class="mb ${METHODS[c][0]}">${METHODS[c][1]}</span>`).join('');
+const rxLink = (p, si = -1) => `<a href="#rx/${p.id}" class="rxlink" data-rx="${p.id}"${si > 0 ? ` data-si="${si}"` : ''}>${esc(p.name)}</a>`;
+const CODE_RE = /\b(?:LU|LI|ST|SP|HT|SI|BL|KI|PC|SJ|GB|LR|CV|GV)\d{1,2}\b|\bEX-[A-Z]{1,2}\d{1,2}\b|\bAnmian\b/g;
+const linkify = (t) => esc(t).replace(CODE_RE, (c) => (BY[c] ? chip(c) : c));
+let rxTag = store.get('rxTag', 'all');
+function renderProtocols() {
+  const box = $('#pane-protocols');
+  box.innerHTML = `<p class="hint">Treatment protocols, each tagged <span class="tag tcm">TCM</span> or <span class="tag classical">Classical</span> (pre-TCM, Five Phases). Select one to light up its points.</p>
+    <input class="pfilter" id="rxq" placeholder="Filter by condition or name…" autocomplete="off" type="search">
+    <div class="seg rxseg"><button data-t="all">All</button><button data-t="tcm">TCM</button><button data-t="classical">Classical</button></div><div class="rxlist"></div>`;
+  const q = $('#rxq', box), list = $('.rxlist', box);
+  const draw = () => {
+    const words = q.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    $$('.rxseg button', box).forEach((b) => b.classList.toggle('on', b.dataset.t === rxTag));
+    let html = '', n = 0;
+    for (const g of GROUPS) {
+      const ps = PROTOCOLS.filter((p) => p.group === g && (rxTag === 'all' || p.tradition === rxTag) && words.every((w) => p.text.includes(w)));
+      if (!ps.length) continue;
+      n += ps.length;
+      html += `<h4>${esc(g)}</h4>` + ps.map((p) => `<div class="cat rx${state.protocol && state.protocol.id === p.id ? ' on' : ''}" data-rx="${p.id}"><div class="ct"><b>${esc(p.name)}</b>${tagHTML({ tradition: p.tradition })}</div><small>${esc([p.pattern || SCHOOLS[p.school], p.conditions.slice(0, 4).join(', ')].filter(Boolean).join(' · '))}</small></div>`).join('');
+    }
+    list.innerHTML = n ? html : '<p class="hint">No protocols match. Try a broader word, or switch the tag filter to All.</p>';
+    $$('.cat.rx', list).forEach((e) => (e.onclick = () => showProtocol(e.dataset.rx)));
+  };
+  q.oninput = draw;
+  $$('.rxseg button', box).forEach((b) => (b.onclick = () => { rxTag = b.dataset.t; store.set('rxTag', rxTag); draw(); }));
+  draw();
+}
+function protocolHTML(p, si) {
+  const main = rxMain(p, si);
+  const row = (e) => { const pt = BY[e[0]]; return `<tr data-code="${pt.code}"><td><span class="chip" style="--c:${MER[pt.mer].color}">${pt.code}</span></td><td>${esc(pt.py)} <span class="zh">${pt.zh}</span><small>${esc(e[2] || pt.en)}</small></td><td class="mcell">${methHTML(e[1])}</td></tr>`; };
+  const all = [...main, ...p.add].map((e) => e[0]);
+  const preg = p.conditions.includes('pregnancy') ? [] : all.filter((c) => CATEGORIES.pregnancy.pts.includes(c));
+  const similar = PROTOCOLS.filter((q) => q !== p).map((q) => ({ q, shared: q.conditions.filter((c) => p.conditions.includes(c)) })).filter((x) => x.shared.length)
+    .sort((a, b) => b.shared.length - a.shared.length || (a.q.tradition !== p.tradition ? -1 : 0)).slice(0, 8);
+  const R = (k) => REFS[k];
+  return `<div class="dh"><div class="kicker">${tagHTML(p)} <span>${esc(p.group)}</span>${p.review ? ' <span class="verify" title="Details vary between teachers or need checking against the source texts">verify</span>' : ''}</div>
+    <h2>${esc(p.name)}${p.zh ? ` <span class="zh">${p.zh}</span>` : ''}</h2>${p.pattern ? `<div class="sub">${esc(p.pattern)}</div>` : ''}</div>
+    ${p.desc ? `<p>${linkify(p.desc)}</p>` : ''}
+    ${p.conditions.length ? `<h4>Used for</h4><div class="chips">${p.conditions.map((c) => `<span class="chip cond" data-q="${esc(c)}" title="Search for “${esc(c)}”">${esc(c)}</span>`).join('')}</div>` : ''}
+    ${p.signs ? `<h4>Presentation</h4><p>${esc(p.signs)}</p>` : ''}
+    ${p.principle ? `<h4>Treatment principle</h4><p>${linkify(p.principle)}</p>` : ''}
+    ${p.sets ? `<h4>Choose</h4><div class="sets">${p.sets.map((st, i) => `<button data-set="${i}" class="${i === si ? 'on' : ''}">${esc(st.name)}</button>`).join('')}</div>` : ''}
+    <h4>Points${p.sets ? ` · ${esc(p.sets[si].name)}` : ''}</h4><table class="ptable">${main.map(row).join('')}</table>
+    ${p.add.length ? `<h4>Optional additions</h4><table class="ptable">${p.add.map(row).join('')}</table>` : ''}
+    ${preg.length ? `<div class="ncaut"><b>Pregnancy:</b> ${preg.map(chip).join(' ')} ${preg.length > 1 ? 'are' : 'is'} classically cautioned or contraindicated in pregnancy.</div>` : ''}
+    ${p.notes ? `<h4>Notes</h4><p>${linkify(p.notes)}</p>` : ''}
+    ${similar.length ? `<h4>Similar protocols</h4><ul class="conns rxl">${similar.map(({ q, shared }) => `<li>${tagHTML(q)} ${rxLink(q)} <span class="muted small">${esc(shared.slice(0, 3).join(', '))}</span></li>`).join('')}</ul>` : ''}
+    ${p.refs && p.refs.length ? `<h4>Further reading</h4><ul class="refs">${p.refs.map((k) => `<li><i>${esc(R(k).title)}</i> · ${esc(R(k).author)}${R(k).year ? `, ${esc(R(k).year)}` : ''}</li>`).join('')}</ul>` : ''}
+    <p class="disclaimer">For study only. Protocols are summarised from textbook teaching and are not medical advice; they are not a substitute for diagnosis and treatment by a qualified practitioner. The references are suggested reading, not page citations.</p>`;
+}
+function showProtocol(id, si = 0, opts = {}) {
+  const p = RX[id];
+  if (!p) return;
+  if (state.flow) stopFlow();
+  si = p.sets ? Math.max(0, Math.min(p.sets.length - 1, si | 0)) : -1;
+  clearHighlight(true);
+  state.selected = null; state.focusMer = null;
+  if (rulerSrc && rulerSrc.point) { clearRulers(); updateLandmarks(); }
+  clearNeedle();
+  $$('.mrow.on').forEach((e) => e.classList.remove('on'));
+  const codes = rxMain(p, si).map((e) => e[0]);
+  setHighlight(new Set(codes), p.name + (p.sets ? ` · ${p.sets[si].name}` : ''));
+  state.protocol = { id, si };
+  $$('.cat.rx').forEach((e) => e.classList.toggle('on', e.dataset.rx === id));
+  openDetail(protocolHTML(p, si));
+  const d = $('#detail');
+  bindChips(d);
+  $$('tr[data-code]', d).forEach((tr) => (tr.onclick = () => selectPoint(BY[tr.dataset.code], { keepHighlight: true })));
+  $$('.sets [data-set]', d).forEach((b) => (b.onclick = () => showProtocol(id, +b.dataset.set)));
+  if (!opts.noFly) frameCodes(codes);
+  if (!state.quiz) history.replaceState(null, '', `#rx/${id}${si > 0 ? '/' + si : ''}`);
+}
+let runSearch = () => {};
+function searchFor(q) { const inp = $('#search'); inp.value = q; runSearch(); }
 
 function renderVessels() {
   const box = $('#pane-vessels');
@@ -758,7 +871,8 @@ function selectElement(el) {
     <tr><td>Season</td><td>${inf.season}</td></tr><tr><td>Climate</td><td>${inf.climate}</td></tr><tr><td>Sense organ</td><td>${inf.sense}</td></tr><tr><td>Tissue</td><td>${inf.tissue}</td></tr><tr><td>Emotion</td><td>${inf.emotion}</td></tr><tr><td>Colour · taste</td><td>${inf.colour} · ${inf.taste}</td></tr>
     <tr><td>Generates</td><td>${son(el)} <span class="muted">(mother of ${son(el)})</span></td></tr><tr><td>Generated by</td><td>${mother(el)}</td></tr><tr><td>Controls</td><td>${ELEMENTS[(ELEMENTS.indexOf(el) + 2) % 5]}</td></tr><tr><td>Controlled by</td><td>${ELEMENTS[(ELEMENTS.indexOf(el) + 3) % 5]}</td></tr></table>
     <h4>${el} points of the Five-Shu system</h4><p class="muted small">Every channel has one transporting point of each phase. These are the ${el.toLowerCase()} points:</p><div class="chips">${shuPts.map(chip).join('')}</div>
-    <button class="ghost" id="hlshu">Highlight only these ${shuPts.length} points</button>`;
+    <button class="ghost" id="hlshu">Highlight only these ${shuPts.length} points</button>
+    ${RX['cf-' + el.toLowerCase()] ? `<h4>Five Element treatment</h4><ul class="conns rxl"><li>${tagHTML(RX['cf-' + el.toLowerCase()])} ${rxLink(RX['cf-' + el.toLowerCase()])}</li></ul>` : ''}`;
   openDetail(html);
   bindChips($('#detail'));
   $('#hlshu').onclick = () => setHighlight(new Set(shuPts), `${el} Five-Shu points`);
@@ -821,24 +935,70 @@ function search(q) {
   }
   return res.sort((a, b) => b.score - a.score || PTS.indexOf(a.pt) - PTS.indexOf(b.pt));
 }
+function searchProtocols(q) {
+  const nq = norm(q), tq = q.trim();
+  if (nq.length < 3) return [];
+  const words = q.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+  const res = [];
+  for (const p of PROTOCOLS) {
+    let score = 0, cond = null;
+    p.conditions.forEach((c, i) => {
+      const nc = norm(c);
+      // conditions listed first are a protocol's main uses: rank them slightly higher
+      const sc = (nc === nq ? 100 : nc.startsWith(nq) ? 80 : nc.includes(nq) ? 60 : 0) - (i ? Math.min(9, i) : 0);
+      if (sc > score) { score = sc; cond = c; }
+    });
+    if (norm(p.name).includes(nq)) score = Math.max(score, 85);
+    if (p.pattern && norm(p.pattern).includes(nq)) score = Math.max(score, 65);
+    if (p.zh && p.zh.includes(tq)) score = Math.max(score, 75);
+    if (!score && words.length && words.every((w) => p.text.includes(w))) score = 25;
+    if (score) res.push({ p, score, cond });
+  }
+  return res.sort((a, b) => b.score - a.score);
+}
 function initSearch() {
   const inp = $('#search'), out = $('#results');
-  let last = [];
+  let last = [], lastRx = [], rxFirst = false;
   const run = () => {
     const q = inp.value.trim();
     last = search(q);
+    lastRx = searchProtocols(q);
     if (!q) { out.classList.remove('on'); out.innerHTML = ''; return; }
     out.classList.add('on');
     const symptom = last.length > 3 && last[0].score <= 30;
-    out.innerHTML = (last.length ? '' : '<div class="none">No points found. Try a code (LI4), a pinyin name (Hegu), an English name or a symptom (insomnia).</div>') +
-      (symptom ? `<button class="hlall">Highlight all ${last.length} matching points on the body</button>` : '') +
+    rxFirst = lastRx.length > 0 && !(last[0] && last[0].score >= 80);
+    // condition summary: protocols matched through one of their conditions
+    const byCond = lastRx.filter((r) => r.cond && r.score >= 51);
+    let summary = '';
+    if (byCond.length > 1) {
+      const counts = {}; byCond.forEach((r) => (counts[r.cond] = (counts[r.cond] || 0) + 1));
+      const label = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
+      const nt = byCond.filter((r) => r.p.tradition === 'tcm').length, nc = byCond.length - nt;
+      const codes = new Set(byCond.flatMap((r) => rxMain(r.p, 0).map((e) => e[0])));
+      summary = `<button class="hlall rxall">Highlight all ${codes.size} points of the ${byCond.length} protocols for “${esc(label)}” (${nt} TCM · ${nc} Classical)</button>`;
+      out.dataset.codes = [...codes].join(',');
+      out.dataset.label = label;
+    }
+    const rxRows = lastRx.slice(0, 12).map((r, i) => `<div class="res rxres" data-j="${i}">${tagHTML({ tradition: r.p.tradition })}<div><b>${esc(r.p.name)}</b><small>${esc([r.cond ? 'for ' + r.cond : '', r.p.pattern || (r.p.school ? SCHOOLS[r.p.school] : '')].filter(Boolean).join(' · '))}</small></div></div>`).join('');
+    const ptRows = (symptom ? `<button class="hlall ptall">Highlight all ${last.length} matching points on the body</button>` : '') +
       last.slice(0, 40).map((r, i) => `<div class="res" data-i="${i}"><span class="chip" style="--c:${MER[r.pt.mer].color}">${r.pt.code}</span><div><b>${esc(r.pt.py)}</b> <span class="zh">${r.pt.zh}</span><small>${esc(r.pt.en)}${r.why ? ' · ' + esc(r.why) : ''}</small></div></div>`).join('');
-    $$('.res', out).forEach((e) => (e.onclick = () => { selectPoint(last[+e.dataset.i].pt); if (innerWidth < 900) out.classList.remove('on'); }));
-    const b = $('.hlall', out); if (b) b.onclick = () => { setHighlight(new Set(last.map((r) => r.pt.code)), `Search: ${q}`); out.classList.remove('on'); };
+    const rxBlock = lastRx.length ? `<div class="rhead">Protocols · ${lastRx.length}</div>${summary}${rxRows}` : '';
+    const ptBlock = last.length ? (lastRx.length ? `<div class="rhead">Points · ${last.length}</div>` : '') + ptRows : '';
+    out.innerHTML = (last.length || lastRx.length ? '' : '<div class="none">Nothing found. Try a code (LI4), a pinyin name (Hegu), an English name, a symptom or a condition (insomnia).</div>') +
+      (rxFirst ? rxBlock + ptBlock : ptBlock + rxBlock);
+    const done = () => { if (innerWidth < 900) out.classList.remove('on'); };
+    $$('.res[data-i]', out).forEach((e) => (e.onclick = () => { selectPoint(last[+e.dataset.i].pt); done(); }));
+    $$('.res[data-j]', out).forEach((e) => (e.onclick = () => { showProtocol(lastRx[+e.dataset.j].p.id); done(); }));
+    const b = $('.ptall', out); if (b) b.onclick = () => { setHighlight(new Set(last.map((r) => r.pt.code)), `Search: ${q}`); out.classList.remove('on'); };
+    const ra = $('.rxall', out); if (ra) ra.onclick = () => { setHighlight(new Set(out.dataset.codes.split(',')), `Protocols for ${out.dataset.label}`); out.classList.remove('on'); };
   };
+  runSearch = run;
   inp.addEventListener('input', run);
   inp.addEventListener('focus', run);
-  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && last[0]) { selectPoint(last[0].pt); out.classList.remove('on'); inp.blur(); } if (e.key === 'Escape') { inp.value = ''; run(); inp.blur(); } });
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { if (rxFirst && lastRx[0]) showProtocol(lastRx[0].p.id); else if (last[0]) selectPoint(last[0].pt); else if (lastRx[0]) showProtocol(lastRx[0].p.id); out.classList.remove('on'); inp.blur(); }
+    if (e.key === 'Escape') { inp.value = ''; run(); inp.blur(); }
+  });
   document.addEventListener('pointerdown', (e) => { if (!out.contains(e.target) && e.target !== inp) out.classList.remove('on'); });
 }
 
@@ -917,6 +1077,8 @@ function bindChips(root) {
   $$('.chip.p', root).forEach((c) => (c.onclick = () => selectPoint(BY[c.dataset.code], { keepHighlight: true })));
   $$('.chip.m', root).forEach((c) => (c.onclick = () => selectMeridian(c.dataset.m)));
   $$('.chip.cat', root).forEach((c) => (c.onclick = () => { const k = c.dataset.k; clearHighlight(true); $$(`.cat[data-k=${k}]`).forEach((e) => e.classList.add('on')); setHighlight(new Set(CATEGORIES[k].pts), CATEGORIES[k].name); }));
+  $$('.rxlink, .rxback', root).forEach((a) => (a.onclick = (e) => { e.preventDefault(); showProtocol(a.dataset.rx, +(a.dataset.si || 0)); }));
+  $$('.chip.cond', root).forEach((c) => (c.onclick = () => searchFor(c.dataset.q)));
 }
 function organOf(code) {
   for (const k of ['mu', 'shu', 'lowerhe']) if (CATEGORIES[k].map[code]) return CATEGORIES[k].map[code];
@@ -1040,8 +1202,12 @@ function pointHTML(pt) {
     conns.push(`<li>Phase: <b style="color:${EL_INFO[el].color}">${el}</b> on a ${m.el} channel.</li>`);
   }
   const side = pt.bil ? 'Bilateral (both sides of the body)' : (pt.inst.length > 1 ? `${pt.inst.length} points` : 'Single point on the midline');
+  const rx = RX_BY_PT[pt.code] || [];
+  const rxHTML = rx.length ? `<h4>Used in protocols · ${rx.length}</h4><ul class="conns rxl">${rx.map((r) => `<li>${tagHTML(r.p)} ${rxLink(r.p, r.si)}${r.si >= 0 ? ` <span class="muted small">${esc(r.p.sets[r.si].name)}</span>` : ''} ${methHTML(r.method)}${r.add ? ' <span class="muted small">optional</span>' : ''}</li>`).join('')}</ul>` : '';
+  const ap = state.protocol && RX[state.protocol.id];
+  const back = ap && rxMain(ap, state.protocol.si).concat(ap.add).some((e) => e[0] === pt.code) ? `<button class="ghost rxback" data-rx="${ap.id}" data-si="${Math.max(0, state.protocol.si)}">‹ Back to ${esc(ap.name)}</button>` : '';
   return `<div class="dh"><div class="kicker"><span class="chip m" data-m="${m.id}" style="--c:${m.color}">${m.id === 'EX' ? 'Extra point' : m.name + ' channel'}</span> ${m.id !== 'EX' ? `point ${pt.n} of ${m.points.length}` : esc(pt.region || '')}</div>
-    <h2><span class="code" style="color:${m.color}">${pt.code}</span> ${esc(pt.py)} <span class="zh">${pt.zh}</span></h2><div class="sub">${esc(pt.en)}</div></div>
+    <h2><span class="code" style="color:${m.color}">${pt.code}</span> ${esc(pt.py)} <span class="zh">${pt.zh}</span></h2><div class="sub">${esc(pt.en)}</div>${back}</div>
     <div class="nav">${prev ? `<button data-code="${prev.code}">‹ ${prev.code}</button>` : '<span></span>'}<span class="muted small">${side}</span>${next ? `<button data-code="${next.code}">${next.code} ›</button>` : '<span></span>'}</div>
     <h4>Location</h4><p>${esc(pt.loc)}</p>
     ${guideHTML(pt)}
@@ -1050,6 +1216,7 @@ function pointHTML(pt) {
     <h4>Indications</h4><p>${esc(pt.ind)}</p>
     ${cats ? `<h4>Classical categories</h4><ul class="cats">${cats}</ul>` : ''}
     ${conns.length ? `<h4>Connections</h4><ul class="conns">${conns.join('')}</ul>` : ''}
+    ${rxHTML}
     <p class="disclaimer">For study only. Locations are shown on a stylised model using proportional (cun) measurement and are approximate. Needling should only be performed by a trained practitioner.</p>`;
 }
 function selectPoint(pt, opts = {}) {
@@ -1098,7 +1265,15 @@ function meridianHTML(m) {
     ${o ? `<h4>Key points</h4><table class="kv"><tr><td>Yuan-Source</td><td>${key('yuan')}</td></tr><tr><td>Luo-Connecting</td><td>${key('luo')}</td></tr><tr><td>Xi-Cleft</td><td>${key('xi')}</td></tr><tr><td>Front-Mu</td><td>${chip(o.mu)}</td></tr><tr><td>Back-Shu</td><td>${chip(o.shu)}</td></tr>${o.he ? `<tr><td>Lower He-Sea</td><td>${chip(o.he)}</td></tr>` : ''}
       <tr><td>Five Shu</td><td>${FIVE_SHU[m.id].map((n, i) => `<span class="muted small">${FIVE_SHU_NAMES[SHU_KEYS[i]].split('-')[1]}</span> ${chip(m.id + n)}`).join(' ')}</td></tr>
       <tr><td>Tonify · Sedate</td><td>${key('tonify')} · ${key('sedate')}</td></tr></table>` : `<h4>Key points</h4><div class="chips">${m.points.filter((p) => p.cats.length).map((p) => chip(p.code)).join('')}</div>`}
+    ${merProtocolsHTML(m)}
     <h4>All points</h4><table class="ptable">${m.points.map((p) => `<tr data-code="${p.code}"><td><span class="chip" style="--c:${m.color}">${p.code}</span></td><td>${esc(p.py)} <span class="zh">${p.zh}</span><small>${esc(p.en)}</small></td></tr>`).join('')}</table>`;
+}
+function merProtocolsHTML(m) {
+  const n = {};
+  for (const pt of m.points) for (const r of RX_BY_PT[pt.code] || []) if (!r.add) n[r.p.id] = (n[r.p.id] || 0) + 1;
+  const top = Object.keys(n).sort((a, b) => n[b] - n[a]).slice(0, 8);
+  if (!top.length) return '';
+  return `<h4>Protocols using this channel</h4><ul class="conns rxl">${top.map((id) => `<li>${tagHTML(RX[id])} ${rxLink(RX[id])} <span class="muted small">${n[id]} point${n[id] > 1 ? 's' : ''}</span></li>`).join('')}</ul>`;
 }
 const MER_VIEW = { LU: 'torso', LI: 'front', ST: 'front', SP: 'front', HT: 'front', SI: 'back', BL: 'back', KI: 'front', PC: 'front', SJ: 'back', GB: 'left', LR: 'front', CV: 'front', GV: 'back', EX: 'front' };
 function selectMeridian(id) {
@@ -1331,6 +1506,7 @@ function initToolbar() {
 function routeHash() {
   const id = decodeURIComponent(location.hash.slice(1));
   if (!id) return;
+  if (id.startsWith('rx/')) { const [, rid, si] = id.split('/'); if (!state.protocol || state.protocol.id !== rid || Math.max(0, state.protocol.si) !== (+si || 0)) showProtocol(rid, +si || 0); return; }
   if (BY[id]) { if (state.selected !== BY[id]) selectPoint(BY[id]); }
   else if (MER[id]) { if (state.focusMer !== id) selectMeridian(id); }
 }
@@ -1630,13 +1806,13 @@ async function boot() {
   buildLines();
   status.textContent = 'Compiling shaders…';
   await sleep(30);
-  renderChannels(); renderCategories(); renderVessels(); renderPhases(); renderQuiz(); renderMeasure(); updateLandmarks();
+  renderChannels(); renderProtocols(); renderCategories(); renderVessels(); renderPhases(); renderQuiz(); renderMeasure(); updateLandmarks();
   initSearch(); initToolbar();
   { const [t, p] = VIEWS.front(); controls.target.set(...t); camera.position.set(...p); controls.update(); }
   renderBody(); renderer.render(scene, camera);
   $('#loading').classList.add('done');
   loop();
   routeHash();
-  window.__acu = { side: () => { sideViewNeedle(); return camAnim && camAnim.tp; }, ni: () => needleInfo, ng: () => !!needleGroup, pick: (x, y) => { const i = pick({ clientX: x, clientY: y, pointerType: 'touch' }); return i && i.pt.code; }, dbg: () => ({ rb: rulerBox && [rulerBox.min, rulerBox.max], lm: lmShow.map(l => l.p), cam: camera.position, tgt: controls.target }), M: () => M, PTS, BY, MER, state, view, selectPoint, selectMeridian, camera, controls, startFlow, stopFlow, startQuiz, setHighlight, CATEGORIES, renderer, needs: () => { needBody = true; needRender = true; } };
+  window.__acu = { side: () => { sideViewNeedle(); return camAnim && camAnim.tp; }, ni: () => needleInfo, ng: () => !!needleGroup, pick: (x, y) => { const i = pick({ clientX: x, clientY: y, pointerType: 'touch' }); return i && i.pt.code; }, dbg: () => ({ rb: rulerBox && [rulerBox.min, rulerBox.max], lm: lmShow.map(l => l.p), cam: camera.position, tgt: controls.target }), M: () => M, PTS, BY, MER, state, view, selectPoint, selectMeridian, camera, controls, startFlow, stopFlow, startQuiz, setHighlight, showProtocol, RX, RX_BY_PT, CATEGORIES, renderer, needs: () => { needBody = true; needRender = true; } };
 }
 boot().catch((e) => { $('#loadmsg').textContent = 'Something went wrong: ' + e.message; console.error(e); });
